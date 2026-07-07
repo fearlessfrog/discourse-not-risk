@@ -3,8 +3,8 @@
 # name: discourse-not-risk
 # about: A forum-native, turn-based strategy campaign game for Discourse.
 # version: 0.1.0
-# authors: Discourse Not Risk Contributors
-# url: https://github.com/discourse/discourse-not-risk
+# authors: fearlessfrog and Discourse Not Risk Contributors
+# url: https://github.com/fearlessfrog/discourse-not-risk
 # required_version: 2.7.0
 
 enabled_site_setting :not_risk_enabled
