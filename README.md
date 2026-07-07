@@ -131,3 +131,8 @@ const game = await nr("/games", {
 await nr(`/games/${game.game.id}/join`, { user_id: ALICE_ID });
 await nr(`/games/${game.game.id}/join`, { user_id: BOB_ID });
 ```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
