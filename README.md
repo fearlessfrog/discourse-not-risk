@@ -4,6 +4,10 @@ A small Discourse plugin that adds a forum-native, turn-based, Risk-inspired str
 
 This is an MVP. It intentionally does not include cards, objectives, teams, AI players, fog of war, or a polished admin UI.
 
+## Screenshot
+
+![Not Risk game board screenshot](docs/Screenshot1.jpg)
+
 ## Local install
 
 From a local Discourse checkout next to this plugin:
