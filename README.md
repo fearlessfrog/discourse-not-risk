@@ -95,3 +95,39 @@ bundle exec rspec \
   plugins/discourse-not-risk/spec/requests/not_risk_games_controller_spec.rb \
   plugins/discourse-not-risk/spec/lib/not_risk_pretty_text_spec.rb
 ```
+
+## Staff Browser Helpers (temp until admin UI)
+
+```jscript
+const csrf = document.querySelector("meta[name=csrf-token]").content;
+
+async function nr(path, body = {}) {
+  const res = await fetch(`/not-risk${path}.json`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrf,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await res.text();
+  const json = JSON.parse(text);
+  console.log(json);
+  return json;
+}
+```
+
+```jscript
+const game = await nr("/games", {
+  topic_id: TOPIC_ID,
+  name: "Fantasy 12 Test Campaign",
+});
+```
+
+```jscript
+// /u/username.json should give back id e.g. "users" "id"
+await nr(`/games/${game.game.id}/join`, { user_id: ALICE_ID });
+await nr(`/games/${game.game.id}/join`, { user_id: BOB_ID });
+```
