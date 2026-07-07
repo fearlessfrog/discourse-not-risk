@@ -1,0 +1,4 @@
+plugins:
+  not_risk_enabled:
+    default: true
+    client: true

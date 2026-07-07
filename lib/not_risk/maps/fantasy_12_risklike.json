@@ -1,0 +1,151 @@
+{
+  "map": {
+    "key": "fantasy_12_risklike",
+    "imageSize": {
+      "width": 1536,
+      "height": 1024
+    },
+    "viewBox": {
+      "width": 1000,
+      "height": 667
+    }
+  },
+  "territories": [
+    {
+      "id": "northwest_forest",
+      "name": "Northwest Forest",
+      "group": "northlands",
+      "label": { "x": 245, "y": 144 },
+      "units": { "x": 245, "y": 176 },
+      "adjacent": ["central_kingdom", "western_highlands"]
+    },
+    {
+      "id": "frost_peaks",
+      "name": "Frost Peaks",
+      "group": "northlands",
+      "label": { "x": 455, "y": 101 },
+      "units": { "x": 455, "y": 132 },
+      "adjacent": ["golden_plains", "central_kingdom"]
+    },
+    {
+      "id": "golden_plains",
+      "name": "Golden Plains",
+      "group": "northlands",
+      "label": { "x": 675, "y": 122 },
+      "units": { "x": 675, "y": 153 },
+      "adjacent": ["frost_peaks", "red_mountains", "sand_realm", "central_kingdom"]
+    },
+    {
+      "id": "red_mountains",
+      "name": "Red Mountains",
+      "group": "eastlands",
+      "label": { "x": 830, "y": 234 },
+      "units": { "x": 830, "y": 266 },
+      "adjacent": ["golden_plains", "sand_realm"]
+    },
+    {
+      "id": "central_kingdom",
+      "name": "Central Kingdom",
+      "group": "heartlands",
+      "label": { "x": 470, "y": 270 },
+      "units": { "x": 470, "y": 302 },
+      "adjacent": [
+        "northwest_forest",
+        "frost_peaks",
+        "golden_plains",
+        "western_highlands",
+        "volcanic_wastes",
+        "dark_marsh",
+        "sand_realm"
+      ]
+    },
+    {
+      "id": "western_highlands",
+      "name": "Western Highlands",
+      "group": "westlands",
+      "label": { "x": 190, "y": 275 },
+      "units": { "x": 190, "y": 306 },
+      "adjacent": ["northwest_forest", "central_kingdom", "volcanic_wastes"]
+    },
+    {
+      "id": "volcanic_wastes",
+      "name": "Volcanic Wastes",
+      "group": "westlands",
+      "label": { "x": 210, "y": 410 },
+      "units": { "x": 210, "y": 441 },
+      "adjacent": ["western_highlands", "central_kingdom", "southern_bay"]
+    },
+    {
+      "id": "southern_bay",
+      "name": "Southern Bay",
+      "group": "southlands",
+      "label": { "x": 405, "y": 500 },
+      "units": { "x": 405, "y": 531 },
+      "adjacent": ["volcanic_wastes", "dark_marsh"]
+    },
+    {
+      "id": "dark_marsh",
+      "name": "Dark Marsh",
+      "group": "southlands",
+      "label": { "x": 640, "y": 432 },
+      "units": { "x": 640, "y": 464 },
+      "adjacent": ["central_kingdom", "southern_bay", "lagoon_coast", "sand_realm", "isle_of_mists"]
+    },
+    {
+      "id": "lagoon_coast",
+      "name": "Lagoon Coast",
+      "group": "southlands",
+      "label": { "x": 430, "y": 419 },
+      "units": { "x": 430, "y": 450 },
+      "adjacent": ["central_kingdom", "dark_marsh", "sand_realm"]
+    },
+    {
+      "id": "sand_realm",
+      "name": "Sand Realm",
+      "group": "eastlands",
+      "label": { "x": 710, "y": 297 },
+      "units": { "x": 710, "y": 329 },
+      "adjacent": ["golden_plains", "red_mountains", "central_kingdom", "dark_marsh", "lagoon_coast", "isle_of_mists"]
+    },
+    {
+      "id": "isle_of_mists",
+      "name": "Isle of Mists",
+      "group": "islands",
+      "label": { "x": 845, "y": 486 },
+      "units": { "x": 845, "y": 518 },
+      "adjacent": ["sand_realm", "dark_marsh"]
+    }
+  ],
+  "groups": {
+    "northlands": {
+      "name": "Northlands",
+      "bonus": 2,
+      "territories": ["northwest_forest", "frost_peaks", "golden_plains"]
+    },
+    "westlands": {
+      "name": "Westlands",
+      "bonus": 2,
+      "territories": ["western_highlands", "volcanic_wastes"]
+    },
+    "heartlands": {
+      "name": "Heartlands",
+      "bonus": 1,
+      "territories": ["central_kingdom"]
+    },
+    "eastlands": {
+      "name": "Eastlands",
+      "bonus": 2,
+      "territories": ["red_mountains", "sand_realm"]
+    },
+    "southlands": {
+      "name": "Southlands",
+      "bonus": 3,
+      "territories": ["southern_bay", "dark_marsh", "lagoon_coast"]
+    },
+    "islands": {
+      "name": "Islands",
+      "bonus": 1,
+      "territories": ["isle_of_mists"]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+en:
+  js:
+    not_risk:
+      open_war_room: "Open War Room"
+      start_campaign: "Start Campaign"
+      deploy: "Deploy"
+      attack: "Attack"
+      advance_to_fortify: "Advance to Fortify"
+      fortify: "Fortify"
+      end_turn: "End Turn"
