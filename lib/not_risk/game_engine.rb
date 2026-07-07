@@ -532,7 +532,7 @@ module ::NotRisk
     end
 
     def turn_summary_raw(game, player, next_player, events)
-      lines = ["Turn #{game.turn_number} - #{player.user.username}", ""]
+      lines = ["Turn #{game.turn_number} - @#{player.user.username}", ""]
       deploys = events.select { |event| event.event_type == "deploy" }
       attacks = events.select { |event| event.event_type == "attack" }
       fortifies = events.select { |event| event.event_type == "fortify" }
@@ -572,7 +572,7 @@ module ::NotRisk
 
       lines << ""
       lines << "Next:"
-      lines << "- #{next_player.user.username}"
+      lines << "- @#{next_player.user.username}"
       lines.join("\n")
     end
 

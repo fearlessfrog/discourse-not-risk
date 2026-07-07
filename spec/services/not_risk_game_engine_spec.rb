@@ -325,13 +325,17 @@ RSpec.describe NotRisk::GameEngine do
 
   it "ends the turn, advances player, and creates one campaign reply" do
     game = create_started_game
-    current_engine = engine_for(game.current_player)
+    ending_player = game.current_player
+    next_player = game.players.where.not(id: ending_player.id).order(:position).first
+    current_engine = engine_for(ending_player)
     game.update!(current_phase: "attack")
 
     expect { current_engine.end_turn(game) }.to change { Post.where(topic_id: topic.id).count }.by(1)
 
-    expect(game.reload.current_player_id).not_to eq(game.players.order(:position).first.id)
+    expect(game.reload.current_player_id).to eq(next_player.id)
     expect(game.current_phase).to eq("reinforce")
-    expect(topic.posts.order(:post_number).last.raw).to include("Turn 1 -")
+    summary = topic.posts.order(:post_number).last.raw
+    expect(summary).to include("Turn 1 - @#{ending_player.user.username}")
+    expect(summary).to include("@#{next_player.user.username}")
   end
 end
