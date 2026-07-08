@@ -63,7 +63,7 @@ Territory bonuses are currently: Central Kingdom +2, Southern Bay +1, and Isle o
 The MVP uses a raster-backed Fantasy 12 map. The base art is served from:
 
 ```text
-/plugins/discourse-not-risk/images/fantasy-12-small.png
+/plugins/discourse-not-risk/images/fantasy-12-small.jpg
 ```
 
 Territory labels, army badges, ownership tint, selection state, and hit zones are SVG overlays driven by `lib/not_risk/maps/fantasy_12_risklike.json`. If you have local development games created with an older map key, recreate them after updating the plugin.

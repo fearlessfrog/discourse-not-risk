@@ -39,7 +39,7 @@ RSpec.describe NotRisk::GamesController do
     expect(response.status).to eq(200)
     expect(response.parsed_body["game"]["id"]).to eq(game_id)
     expect(response.parsed_body["map"]["background_image_url"]).to eq(
-      "/plugins/discourse-not-risk/images/fantasy-12-small.png",
+      "/plugins/discourse-not-risk/images/fantasy-12-small.jpg",
     )
     expect(response.parsed_body["map"]["territories"].map { |territory| territory["key"] }).to include(
       "northwest_forest",

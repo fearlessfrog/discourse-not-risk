@@ -8,7 +8,7 @@ module ::NotRisk
       DATA = JSON.parse(File.read(File.expand_path("fantasy_12_risklike.json", __dir__)), symbolize_names: true)
       KEY = DATA.dig(:map, :key)
       NAME = "Fantasy 12 Campaign"
-      BACKGROUND_IMAGE_URL = "/plugins/discourse-not-risk/images/fantasy-12-small.png"
+      BACKGROUND_IMAGE_URL = "/plugins/discourse-not-risk/images/fantasy-12-small.jpg"
       OVERLAY_DEFAULT = { rx: 78, ry: 48 }.freeze
       OVERLAYS = {
         central_kingdom: { rx: 100, ry: 66 },

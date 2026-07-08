@@ -44,7 +44,7 @@ RSpec.describe NotRisk::GameEngine do
 
     expect(state[:game][:name]).to eq("Mudspike Test")
     expect(state[:game][:map_key]).to eq(NotRisk::Maps::Fantasy12Risklike::KEY)
-    expect(state[:map][:background_image_url]).to eq("/plugins/discourse-not-risk/images/fantasy-12-small.png")
+    expect(state[:map][:background_image_url]).to eq("/plugins/discourse-not-risk/images/fantasy-12-small.jpg")
     expect(state[:map][:image_size]).to eq(width: 1536, height: 1024)
     expect(state[:map][:view_box]).to eq("0 0 1000 667")
     expect(state[:map][:groups].keys).to include(:northlands, :southlands)
