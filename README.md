@@ -4,7 +4,7 @@ A small Discourse plugin that adds a forum-native, turn-based, Risk-inspired str
 
 This is an MVP. It intentionally does not include cards, objectives, teams, AI players, fog of war, or a polished admin UI.
 
-If people use it or like the idea I might add things, plus of coursefeel free to fork and add away.
+If people use it or like the idea I might add things, plus of course feel free to fork and add away.
 
 ## Screenshot
 
