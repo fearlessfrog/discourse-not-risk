@@ -1,16 +1,24 @@
 # discourse-not-risk
 
-A small Discourse plugin that adds a forum-native, turn-based, Risk-inspired strategy game using a fictional Fantasy 12 campaign map.
+A small Discourse plugin that adds a forum-native, turn-based, Risk-inspired strategy game using a fictional test campaign map.
 
 This is an MVP. It intentionally does not include cards, objectives, teams, AI players, fog of war, or a polished admin UI.
 
+If people use it or like the idea I might add things, plus of coursefeel free to fork and add away.
+
 ## Screenshot
+
+Main game map
 
 ![Not Risk game board screenshot](docs/Screenshot1.jpg)
 
+Battles!
+
+![Battle screenshot](docs/battle-dialog.jpg)
+
 ## Creating a game
 
-Create a normal Discourse topic first. Then call the staff-only JSON endpoint with that topic ID:
+Create a normal Discourse topic first. Then either be logged in as Staff and use the browser console helper below or call the staff-only JSON endpoint with that topic ID:
 
 ```bash
 curl -X POST http://localhost:3000/not-risk/games.json \
@@ -33,9 +41,9 @@ The cooked post renders a compact campaign summary. Use **Open War Room** to pla
 
 ## MVP flow
 
-1. Staff creates a game attached to an existing topic.
+1. Staff creates a new stub topic and then creates the game using the browser script or curl POST.
 2. Players join, or staff adds players with `POST /not-risk/games/:id/join`.
-3. Staff starts the game with `POST /not-risk/games/:id/start`.
+3. Staff starts the game.
 4. Current player deploys reinforcements based on territories held: `max(3, owned territories / 2 + territory bonuses)`.
 5. Current player may attack adjacent enemy territories repeatedly.
 6. Current player advances to fortify, then may fortify once between adjacent owned territories.
@@ -48,13 +56,15 @@ Territory bonuses are currently: Central Kingdom +2, Southern Bay +1, and Isle o
 
 ## Map assets
 
-The MVP uses a raster-backed Fantasy 12 map. The base art is served from:
+The MVP uses a raster-backed test Fantasy 12 map. The base art is served from:
 
 ```text
 /plugins/discourse-not-risk/images/fantasy-12-small.jpg
 ```
 
 Territory labels, army badges, ownership tint, selection state, and hit zones are SVG overlays driven by `lib/not_risk/maps/fantasy_12_risklike.json`. If you have local development games created with an older map key, recreate them after updating the plugin.
+
+The intention is to create a large map with multiple territories into continents for bonuses, plus allowing 4 to 6 players.
 
 ## API
 
@@ -75,7 +85,6 @@ POST   /not-risk/games/:id/end_turn
 Run from the Discourse checkout after linking the plugin:
 
 ```bash
-cd /home/fearlessfrog/code/discourse
 bundle exec rspec plugins/discourse-not-risk/spec
 ```
 
@@ -112,13 +121,15 @@ async function nr(path, body = {}) {
 ```
 
 ```jscript
+// Create the game replacing TOPIC_ID with the integer of the one you made.
 const game = await nr("/games", {
   topic_id: TOPIC_ID,
-  name: "Fantasy 12 Test Campaign",
+  name: "Board Game Test Campaign",
 });
 ```
 
 ```jscript
+// Join existing forum members to the game
 // /u/username.json should give back id e.g. "users" "id"
 await nr(`/games/${game.game.id}/join`, { user_id: ALICE_ID });
 await nr(`/games/${game.game.id}/join`, { user_id: BOB_ID });
