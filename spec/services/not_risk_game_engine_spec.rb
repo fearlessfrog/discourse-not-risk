@@ -94,6 +94,16 @@ RSpec.describe NotRisk::GameEngine do
     expect(dynamic_territory[:bonus]).to eq(1)
   end
 
+  it "does not give the random territory bonus to Central Kingdom's starting owner" do
+    game = create_started_game
+    fixed_bonus_keys = NotRisk::GameEngine::TERRITORY_BONUSES.keys
+    dynamic_bonus_key = (game.settings.fetch("territory_bonuses").keys - fixed_bonus_keys).sole
+    central_owner_id = game.territories.find_by!(territory_key: "central_kingdom").owner_player_id
+    dynamic_bonus_owner_id = game.territories.find_by!(territory_key: dynamic_bonus_key).owner_player_id
+
+    expect(dynamic_bonus_owner_id).not_to eq(central_owner_id)
+  end
+
 
   it "rolls initiative to determine player order when starting" do
     state = engine.create(topic_id: topic.id, name: "Mudspike Test")
@@ -218,7 +228,14 @@ RSpec.describe NotRisk::GameEngine do
     target.update!(owner: defender, armies: 2)
     game.update!(current_phase: "attack")
 
-    dice_engine.attack(game, from_key: source.territory_key, to_key: target.territory_key, attack_armies: 2, move_armies: 2)
+    state =
+      dice_engine.attack(
+        game,
+        from_key: source.territory_key,
+        to_key: target.territory_key,
+        attack_armies: 2,
+        move_armies: 2,
+      )
 
     event = game.events.where(event_type: "attack").last
     expect(event.payload["losses"]).to eq("attacker" => 2, "defender" => 0)
@@ -227,6 +244,67 @@ RSpec.describe NotRisk::GameEngine do
     expect(source.reload.armies).to eq(3)
     expect(target.reload.owner_player_id).to eq(defender.id)
     expect(target.armies).to eq(2)
+    expect(state[:action_result]).to include(
+      attacker_player_id: player.id,
+      defender_player_id: defender.id,
+      source_armies_before: 5,
+      source_armies_after: 3,
+      target_armies_before: 2,
+      target_armies_after: 2,
+    )
+    expect(event.payload).to include(JSON.parse(state[:action_result].to_json))
+  end
+
+  it "returns authoritative before and after totals when the defender loses" do
+    game = create_started_game
+    player = game.current_player
+    dice_engine = engine_for(player, rng: rng_with(6, 5, 4, 3))
+    defender = game.players.where.not(id: player.id).first
+    source = game.territories.find_by(owner_player_id: player.id)
+    target_key = NotRisk::Maps::Fantasy12Risklike.territory(source.territory_key)[:adjacent].first
+    target = game.territories.find_by(territory_key: target_key)
+    source.update!(armies: 5)
+    target.update!(owner: defender, armies: 3)
+    game.update!(current_phase: "attack")
+
+    result =
+      dice_engine.attack(game, from_key: source.territory_key, to_key: target.territory_key, attack_armies: 2)[
+        :action_result
+      ]
+
+    expect(result).to include(
+      losses: { attacker: 0, defender: 2 },
+      captured: false,
+      source_armies_before: 5,
+      source_armies_after: 5,
+      target_armies_before: 3,
+      target_armies_after: 1,
+    )
+  end
+
+  it "returns a split result when both sides lose an army" do
+    game = create_started_game
+    player = game.current_player
+    dice_engine = engine_for(player, rng: rng_with(6, 2, 5, 3))
+    defender = game.players.where.not(id: player.id).first
+    source = game.territories.find_by(owner_player_id: player.id)
+    target_key = NotRisk::Maps::Fantasy12Risklike.territory(source.territory_key)[:adjacent].first
+    target = game.territories.find_by(territory_key: target_key)
+    source.update!(armies: 5)
+    target.update!(owner: defender, armies: 2)
+    game.update!(current_phase: "attack")
+
+    result =
+      dice_engine.attack(game, from_key: source.territory_key, to_key: target.territory_key, attack_armies: 2)[
+        :action_result
+      ]
+
+    expect(result).to include(
+      losses: { attacker: 1, defender: 1 },
+      captured: false,
+      source_armies_after: 4,
+      target_armies_after: 1,
+    )
   end
 
   it "allows repeated attacks before advancing to fortify" do
@@ -274,7 +352,14 @@ RSpec.describe NotRisk::GameEngine do
     target.update!(owner: defender, armies: 2)
     game.update!(current_phase: "attack")
 
-    dice_engine.attack(game, from_key: source.territory_key, to_key: target.territory_key, attack_armies: 2, move_armies: 2)
+    state =
+      dice_engine.attack(
+        game,
+        from_key: source.territory_key,
+        to_key: target.territory_key,
+        attack_armies: 2,
+        move_armies: 2,
+      )
 
     event = game.events.where(event_type: "attack").last
     expect(event.payload["attack_armies"]).to eq(2)
@@ -283,6 +368,14 @@ RSpec.describe NotRisk::GameEngine do
     expect(event.payload["captured"]).to eq(true)
     expect(game.reload.current_phase).to eq("attack")
     expect(target.reload.owner_player_id).to eq(player.id)
+    expect(state[:action_result]).to include(
+      captured: true,
+      moved: 2,
+      source_armies_before: 5,
+      source_armies_after: 3,
+      target_armies_before: 2,
+      target_armies_after: 2,
+    )
     expect(target.armies).to eq(2)
   end
 

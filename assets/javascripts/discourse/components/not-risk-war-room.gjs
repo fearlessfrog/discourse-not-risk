@@ -8,10 +8,14 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { eq, not, or } from "discourse/truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
+import { formatNotRiskEvent } from "../lib/not-risk-event-formatter";
+import NotRiskBattle from "./modal/not-risk-battle";
+import NotRiskRules from "./modal/not-risk-rules";
 import NotRiskMap from "./not-risk-map";
 
 export default class NotRiskWarRoom extends Component {
   @service messageBus;
+  @service modal;
 
   @tracked state = this.args.model;
   @tracked selectedFrom;
@@ -19,6 +23,7 @@ export default class NotRiskWarRoom extends Component {
   @tracked armies = 1;
   @tracked moveArmies = 1;
   @tracked busy = false;
+  @tracked showDiagnostics = false;
 
   constructor() {
     super(...arguments);
@@ -78,6 +83,49 @@ export default class NotRiskWarRoom extends Component {
     return `Waiting for ${this.currentPlayer.username} to ${this.phaseLabel}`;
   }
 
+  get actionHint() {
+    if (this.game.current_phase === "ended") {
+      return "The campaign is complete. Review the map and Battle Log for the final result.";
+    }
+
+    if (this.isSetup) {
+      return "Add at least two players, then staff can start the campaign.";
+    }
+
+    if (this.game.current_phase === "reinforce") {
+      return this.selectedFrom
+        ? "Enter how many armies to place here, then deploy."
+        : "Choose one of your territories to reinforce.";
+    }
+
+    if (this.game.current_phase === "attack") {
+      if (!this.selectedFrom) {
+        return "Choose one of your territories with at least 2 armies.";
+      }
+      if (!this.selectedTo) {
+        return "Now choose an adjacent enemy territory to attack.";
+      }
+
+      return "Choose how many armies to send, then attack. One army must stay behind.";
+    }
+
+    if (this.game.current_phase === "fortify") {
+      if (this.fortifyUsed) {
+        return "Fortification complete. End your turn when you are ready.";
+      }
+      if (!this.selectedFrom) {
+        return "Choose one of your territories to move armies from.";
+      }
+      if (!this.selectedTo) {
+        return "Now choose an adjacent territory you own.";
+      }
+
+      return "Enter how many armies to move, then fortify. One army must stay behind.";
+    }
+
+    return "Choose your next action.";
+  }
+
   get selectedFromName() {
     return this.territoryName(this.selectedFrom);
   }
@@ -94,6 +142,10 @@ export default class NotRiskWarRoom extends Component {
     return Math.max((this.selectedFromTerritory?.armies || 0) - 1, 0);
   }
 
+  get fortifyUsed() {
+    return Boolean(this.game.settings?.turn_state?.fortify_used);
+  }
+
   get canDeploy() {
     return this.game.current_phase === "reinforce" && this.selectedFrom;
   }
@@ -103,7 +155,7 @@ export default class NotRiskWarRoom extends Component {
   }
 
   get canFortify() {
-    return this.game.current_phase === "fortify" && this.selectedFrom && this.selectedTo;
+    return this.game.current_phase === "fortify" && !this.fortifyUsed && this.selectedFrom && this.selectedTo;
   }
 
   get canEndTurn() {
@@ -145,6 +197,26 @@ export default class NotRiskWarRoom extends Component {
     return JSON.stringify(event.payload, null, 2);
   };
 
+  eventDisplay = (event) => {
+    const player = this.players.find((candidate) => candidate.id === event.player_id);
+    const summary = formatNotRiskEvent(event, {
+      territoryName: this.territoryName,
+      playerName: this.playerName,
+    });
+
+    return {
+      ...summary,
+      hasPlayer: Boolean(player),
+      playerStyle: player
+        ? htmlSafe(`--not-risk-event-player-color:${player.color}`)
+        : undefined,
+    };
+  };
+
+  playerName = (playerId) => {
+    return this.players.find((player) => player.id === playerId)?.username || "Unknown player";
+  };
+
   refreshFromBus = async () => {
     if (this.busy) {
       return;
@@ -176,6 +248,10 @@ export default class NotRiskWarRoom extends Component {
 
   @action
   selectTerritory(territoryKey) {
+    if (this.game.current_phase === "fortify" && this.fortifyUsed) {
+      return;
+    }
+
     if (this.game.current_phase === "reinforce") {
       this.selectedFrom = territoryKey;
       this.selectedTo = null;
@@ -191,6 +267,12 @@ export default class NotRiskWarRoom extends Component {
   }
 
   @action
+  clearTerritorySelection() {
+    this.selectedFrom = null;
+    this.selectedTo = null;
+  }
+
+  @action
   updateArmies(event) {
     this.armies = event.target.value;
   }
@@ -198,6 +280,11 @@ export default class NotRiskWarRoom extends Component {
   @action
   updateMoveArmies(event) {
     this.moveArmies = event.target.value;
+  }
+
+  @action
+  updateDiagnostics(event) {
+    this.showDiagnostics = event.target.checked;
   }
 
   @action
@@ -210,13 +297,45 @@ export default class NotRiskWarRoom extends Component {
 
   @action
   attack() {
-    return this.postAction("attack", {
-      from_key: this.selectedFrom,
-      to_key: this.selectedTo,
-      attack_armies: this.moveArmies,
-      move_armies: this.moveArmies,
+    const source = this.state.territories.find((territory) => territory.key === this.selectedFrom);
+    const target = this.state.territories.find((territory) => territory.key === this.selectedTo);
+
+    this.modal.show(NotRiskBattle, {
+      model: {
+        attacker: this.ownerFor(source),
+        defender: this.ownerFor(target),
+        fromName: source.name,
+        toName: target.name,
+        sourceArmies: source.armies,
+        targetArmies: target.armies,
+        resolveAttack: this.resolveAttack,
+      },
     });
   }
+
+  resolveAttack = async () => {
+    this.busy = true;
+    try {
+      const response = await ajax(`/not-risk/games/${this.game.id}/attack.json`, {
+        type: "POST",
+        data: {
+          from_key: this.selectedFrom,
+          to_key: this.selectedTo,
+          attack_armies: this.moveArmies,
+          move_armies: this.moveArmies,
+        },
+      });
+      this.state = response;
+      this.selectedFrom = null;
+      this.selectedTo = null;
+      return response.action_result;
+    } catch (error) {
+      popupAjaxError(error);
+      throw error;
+    } finally {
+      this.busy = false;
+    }
+  };
 
   @action
   fortify() {
@@ -242,16 +361,16 @@ export default class NotRiskWarRoom extends Component {
     return this.postAction("start");
   }
 
+  @action
+  showRules() {
+    this.modal.show(NotRiskRules);
+  }
+
   <template>
     <main class="not-risk-war-room">
       <header class="not-risk-war-room__header">
         <div>
           <h1>{{this.game.name}}</h1>
-          <p>
-            Turn {{this.game.turn_number}} ·
-            {{if this.currentPlayer this.currentPlayer.username "Waiting"}} ·
-            {{this.phaseLabel}}
-          </p>
         </div>
         <a href={{this.topicPath}} class="btn">Campaign Topic</a>
       </header>
@@ -280,16 +399,36 @@ export default class NotRiskWarRoom extends Component {
             @selectedFrom={{this.selectedFrom}}
             @selectedTo={{this.selectedTo}}
             @onSelect={{this.selectTerritory}}
+            @onClearSelection={{this.clearTerritorySelection}}
           />
         </div>
 
         <aside class="not-risk-war-room__side">
           <section class="not-risk-panel">
             <h2>Action</h2>
-            <p class="not-risk-muted">
-              From: {{this.selectedFromName}}<br />
-              To: {{this.selectedToName}}
-            </p>
+            <p class="not-risk-action-hint">{{this.actionHint}}</p>
+
+            {{#if (eq this.game.current_phase "reinforce")}}
+              {{#if this.selectedFrom}}
+                <p class="not-risk-action-selection">
+                  <span>Selected</span>
+                  <strong>{{this.selectedFromName}}</strong>
+                </p>
+              {{/if}}
+            {{else}}
+              {{#if this.selectedFrom}}
+                <p class="not-risk-action-selection">
+                  <span>From</span>
+                  <strong>{{this.selectedFromName}}</strong>
+                </p>
+              {{/if}}
+              {{#if this.selectedTo}}
+                <p class="not-risk-action-selection">
+                  <span>To</span>
+                  <strong>{{this.selectedToName}}</strong>
+                </p>
+              {{/if}}
+            {{/if}}
 
             {{#if (eq this.game.current_phase "reinforce")}}
               {{#if this.isSetup}}
@@ -304,7 +443,7 @@ export default class NotRiskWarRoom extends Component {
                 />
               {{else}}
                 <label class="not-risk-field">
-                  Armies
+                  Armies to deploy
                   <input type="number" min="1" value={{this.armies}} {{on "input" this.updateArmies}} />
                 </label>
                 <DButton
@@ -329,25 +468,37 @@ export default class NotRiskWarRoom extends Component {
                   {{on "input" this.updateMoveArmies}}
                 />
               </label>
-              <p class="not-risk-muted">
-                Source armies: {{if this.selectedFromTerritory this.selectedFromTerritory.armies "none"}}.
-                Max attack: {{this.maxAttackArmies}}. Rolls up to 3 dice.
-              </p>
+              {{#if this.selectedFromTerritory}}
+                <p class="not-risk-muted">
+                  Source armies: {{this.selectedFromTerritory.armies}}.
+                  Max attack: {{this.maxAttackArmies}}. Rolls up to 3 dice.
+                </p>
+              {{/if}}
               <DButton
                 @action={{this.attack}}
                 @label="not_risk.attack"
                 @disabled={{or this.busy (not this.canAttack)}}
                 class="btn-primary"
               />
-              <DButton
-                @action={{this.advanceToFortify}}
-                @label="not_risk.advance_to_fortify"
-                @disabled={{or this.busy (not this.canAdvanceToFortify)}}
-              />
+              <div class="not-risk-action-advance">
+                <span>Done attacking? Move on to fortify.</span>
+                <DButton
+                  @action={{this.advanceToFortify}}
+                  @label="not_risk.advance_to_fortify"
+                  @disabled={{or this.busy (not this.canAdvanceToFortify)}}
+                  class="not-risk-action-secondary"
+                />
+              </div>
             {{else if (eq this.game.current_phase "fortify")}}
               <label class="not-risk-field">
-                Armies
-                <input type="number" min="1" value={{this.armies}} {{on "input" this.updateArmies}} />
+                Armies to move
+                <input
+                  type="number"
+                  min="1"
+                  value={{this.armies}}
+                  disabled={{this.fortifyUsed}}
+                  {{on "input" this.updateArmies}}
+                />
               </label>
               <DButton
                 @action={{this.fortify}}
@@ -361,6 +512,11 @@ export default class NotRiskWarRoom extends Component {
               @action={{this.endTurn}}
               @label="not_risk.end_turn"
               @disabled={{or this.busy (not this.canEndTurn)}}
+              class={{if
+                this.fortifyUsed
+                "btn-primary not-risk-action-end-turn"
+                "not-risk-action-secondary not-risk-action-end-turn"
+              }}
             />
           </section>
 
@@ -378,6 +534,12 @@ export default class NotRiskWarRoom extends Component {
                 </li>
               {{/each}}
             </ol>
+            <DButton
+              @action={{this.showRules}}
+              @label="not_risk.rules"
+              @icon="circle-info"
+              class="not-risk-rules-button"
+            />
           </section>
 
           <section class="not-risk-panel">
@@ -403,12 +565,36 @@ export default class NotRiskWarRoom extends Component {
       </nav>
 
       <section class="not-risk-panel not-risk-log">
-        <h2>Battle Log</h2>
+        <header class="not-risk-log__header">
+          <h2>Battle Log</h2>
+          <label class="not-risk-log__diagnostics">
+            <input
+              type="checkbox"
+              checked={{this.showDiagnostics}}
+              {{on "change" this.updateDiagnostics}}
+            />
+            Diagnostics
+          </label>
+        </header>
         {{#each this.state.events as |event|}}
-          <article>
-            <strong>Turn {{event.turn_number}} · {{event.event_type}}</strong>
-            <pre>{{this.eventPayload event}}</pre>
-          </article>
+          {{#if this.showDiagnostics}}
+            <article>
+              <strong>Turn {{event.turn_number}} · {{event.event_type}}</strong>
+              <pre>{{this.eventPayload event}}</pre>
+            </article>
+          {{else}}
+            {{#let (this.eventDisplay event) as |display|}}
+              <article
+                class={{if display.hasPlayer "not-risk-log__player-event"}}
+                style={{display.playerStyle}}
+              >
+                <strong>Turn {{event.turn_number}} · {{display.label}}</strong>
+                {{#each display.lines as |line|}}
+                  <p>{{line}}</p>
+                {{/each}}
+              </article>
+            {{/let}}
+          {{/if}}
         {{/each}}
       </section>
     </main>

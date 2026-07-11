@@ -8,19 +8,6 @@ This is an MVP. It intentionally does not include cards, objectives, teams, AI p
 
 ![Not Risk game board screenshot](docs/Screenshot1.jpg)
 
-## Local install
-
-From a local Discourse checkout next to this plugin:
-
-```bash
-cd /home/fearlessfrog/code/discourse/plugins
-ln -s /home/fearlessfrog/code/discourse-not-risk discourse-not-risk
-cd /home/fearlessfrog/code/discourse
-bin/rails db:migrate
-```
-
-Start Discourse normally after migrations finish.
-
 ## Creating a game
 
 Create a normal Discourse topic first. Then call the staff-only JSON endpoint with that topic ID:
@@ -30,6 +17,7 @@ curl -X POST http://localhost:3000/not-risk/games.json \
   -H "Content-Type: application/json" \
   -d '{"topic_id":123,"name":"Fantasy 12 Campaign"}'
 ```
+(or use the browser script helper below)
 
 The endpoint creates a game and appends this placeholder to the first post:
 
@@ -56,7 +44,7 @@ The cooked post renders a compact campaign summary. Use **Open War Room** to pla
 
 All committed actions are stored in `not_risk_events`.
 
-Territory bonuses are currently: Central Kingdom +2, Southern Bay +1, and Isle of Mists +1. At game start, one additional non-bonus territory is randomly promoted to +1 for that game. Starting ownership is randomized, but the three fixed bonus territories are dealt across players first so one player cannot start with all three.
+Territory bonuses are currently: Central Kingdom +2, Southern Bay +1, and Isle of Mists +1. At game start, one additional non-bonus territory is randomly promoted to +1 for that game. Its starting owner will not be the player who receives Central Kingdom. Starting ownership is randomized, but the three fixed bonus territories are dealt across players first so one player cannot start with all three.
 
 ## Map assets
 
@@ -139,4 +127,3 @@ await nr(`/games/${game.game.id}/join`, { user_id: BOB_ID });
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
-

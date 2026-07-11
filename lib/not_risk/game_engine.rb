@@ -85,7 +85,8 @@ module ::NotRisk
           )
         end
 
-        territory_bonuses = territory_bonuses_with(random_game_bonus_key(Maps::Fantasy12Risklike.territories))
+        territory_bonuses =
+          territory_bonuses_with(random_game_bonus_key(Maps::Fantasy12Risklike.territories, territory_assignments))
 
         game.update!(
           status: "active",
@@ -153,6 +154,10 @@ module ::NotRisk
       ensure_adjacent!(source.territory_key, target.territory_key)
       raise Error, I18n.t("not_risk.errors.insufficient_armies") if source.armies <= 1
       attacking_armies = attack_armies_for(attack_armies, source.armies)
+      attacker_player_id = player.id
+      defender_player_id = target.owner_player_id
+      source_armies_before = source.armies
+      target_armies_before = target.armies
 
       result = nil
       Game.transaction do
@@ -178,18 +183,24 @@ module ::NotRisk
         result = {
           from: source.territory_key,
           to: target.territory_key,
+          attacker_player_id: attacker_player_id,
+          defender_player_id: defender_player_id,
           attack_armies: attacking_armies,
           attacker_dice: attacker_dice,
           defender_dice: defender_dice,
           losses: losses,
           captured: captured,
           moved: moved,
+          source_armies_before: source_armies_before,
+          source_armies_after: source.armies,
+          target_armies_before: target_armies_before,
+          target_armies_after: target.armies,
         }
         record_event(game, player, "attack", result)
       end
 
       publish_game_update!(game, "attack")
-      serialize(game.reload)
+      serialize(game.reload).merge(action_result: result)
     end
 
     def advance_to_fortify(game)
@@ -443,9 +454,15 @@ module ::NotRisk
       items.sort_by { @rng.rand(1_000_000) }
     end
 
-    def random_game_bonus_key(territories)
-      non_bonus_definitions = territories.reject { |definition| TERRITORY_BONUSES.key?(definition[:key]) }
-      shuffle(non_bonus_definitions).first[:key]
+    def random_game_bonus_key(territories, territory_assignments)
+      central_owner = territory_assignments.find { |definition, _player| definition[:key] == "central_kingdom" }&.last
+      owners_by_key = territory_assignments.to_h { |definition, player| [definition[:key], player] }
+      eligible_definitions =
+        territories.reject do |definition|
+          TERRITORY_BONUSES.key?(definition[:key]) || owners_by_key[definition[:key]] == central_owner
+        end
+
+      shuffle(eligible_definitions).first.fetch(:key)
     end
 
     def compare_dice(attacker_dice, defender_dice)

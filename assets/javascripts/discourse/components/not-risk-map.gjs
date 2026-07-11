@@ -110,12 +110,22 @@ export default class NotRiskMap extends Component {
     this.args.onSelect?.(territoryKey);
   }
 
+  @action
+  handleMapClick(event) {
+    if (event.target.closest("[data-territory-key]")) {
+      return;
+    }
+
+    this.args.onClearSelection?.();
+  }
+
   <template>
     <svg
       class="not-risk-map {{if @compact 'is-compact' 'is-large'}}"
       viewBox={{@map.view_box}}
       role="img"
       aria-label={{@map.name}}
+      {{on "click" this.handleMapClick}}
     >
       <image
         class="not-risk-map-background"
