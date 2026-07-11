@@ -19,6 +19,37 @@
   margin-top: 0;
 }
 
+.not-risk-new-game-button {
+  margin-right: 0.5em;
+}
+
+.not-risk-new-game-form {
+  display: grid;
+  gap: 1em;
+}
+
+.not-risk-new-game-form label {
+  display: grid;
+  gap: 0.35em;
+  font-weight: 600;
+}
+
+.not-risk-new-game-form input,
+.not-risk-new-game-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.not-risk-setup-action + .not-risk-setup-action,
+.not-risk-setup-status + .not-risk-setup-action {
+  margin-left: 0.5em;
+}
+
+.not-risk-setup-status {
+  color: var(--success);
+  font-weight: 600;
+}
+
 .not-risk-summary dl {
   margin: 0 0 1rem;
 }

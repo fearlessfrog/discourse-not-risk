@@ -13,5 +13,6 @@ module ::NotRisk
     has_many :events, class_name: "NotRisk::Event", dependent: :destroy
 
     validates :name, :status, :current_phase, :map_key, presence: true
+    validates :topic_id, uniqueness: true
   end
 end

@@ -1,5 +1,6 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
 import NotRiskGameSummary from "../components/not-risk-game-summary";
+import NotRiskNewGameButton from "../components/not-risk-new-game-button";
 
 function attachNotRiskGames(elem, helper) {
   const nodes = [...elem.querySelectorAll(".not-risk-game")];
@@ -29,6 +30,7 @@ export default {
   initialize() {
     withPluginApi((api) => {
       api.decorateCookedElement(attachNotRiskGames, { onlyStream: true });
+      api.renderInOutlet("before-create-topic-button", NotRiskNewGameButton);
     });
   },
 };

@@ -8,6 +8,7 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { eq, not, or } from "discourse/truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
+import { i18n } from "discourse-i18n";
 import { formatNotRiskEvent } from "../lib/not-risk-event-formatter";
 import NotRiskBattle from "./modal/not-risk-battle";
 import NotRiskRules from "./modal/not-risk-rules";
@@ -16,6 +17,7 @@ import NotRiskMap from "./not-risk-map";
 export default class NotRiskWarRoom extends Component {
   @service messageBus;
   @service modal;
+  @service currentUser;
 
   @tracked state = this.args.model;
   @tracked selectedFrom;
@@ -73,7 +75,7 @@ export default class NotRiskWarRoom extends Component {
     }
 
     if (this.isSetup) {
-      return "Ready for staff to start";
+      return this.state.permissions?.can_start ? "Ready to start" : "Waiting for the campaign host";
     }
 
     if (!this.currentPlayer) {
@@ -89,7 +91,7 @@ export default class NotRiskWarRoom extends Component {
     }
 
     if (this.isSetup) {
-      return "Add at least two players, then staff can start the campaign.";
+      return "Join the campaign, then the host or staff can start once at least two players are ready.";
     }
 
     if (this.game.current_phase === "reinforce") {
@@ -167,7 +169,19 @@ export default class NotRiskWarRoom extends Component {
   }
 
   get canStart() {
-    return this.isSetup && this.players.length >= 2;
+    return Boolean(this.state.permissions?.can_start);
+  }
+
+  get canJoin() {
+    return Boolean(this.state.permissions?.can_join);
+  }
+
+  get isParticipant() {
+    return Boolean(this.state.permissions?.is_participant);
+  }
+
+  get isGameFull() {
+    return this.players.length >= (this.game.max_players || 4);
   }
 
   get topicPath() {
@@ -362,6 +376,11 @@ export default class NotRiskWarRoom extends Component {
   }
 
   @action
+  join() {
+    return this.postAction("join");
+  }
+
+  @action
   showRules() {
     this.modal.show(NotRiskRules);
   }
@@ -433,13 +452,27 @@ export default class NotRiskWarRoom extends Component {
             {{#if (eq this.game.current_phase "reinforce")}}
               {{#if this.isSetup}}
                 <p class="not-risk-muted">
-                  {{this.players.length}} players joined. Staff can start once at least two players are in.
+                  {{this.players.length}} of {{this.game.max_players}} players joined.
                 </p>
+                {{#if this.canJoin}}
+                  <DButton
+                    @action={{this.join}}
+                    @label="not_risk.join_game"
+                    @disabled={{this.busy}}
+                    class="btn-primary not-risk-setup-action"
+                  />
+                {{else if this.isParticipant}}
+                  <p class="not-risk-setup-status">{{i18n "not_risk.joined"}}</p>
+                {{else if this.isGameFull}}
+                  <p class="not-risk-setup-status">{{i18n "not_risk.game_full"}}</p>
+                {{else if (not this.currentUser)}}
+                  <p class="not-risk-muted">{{i18n "not_risk.login_to_join"}}</p>
+                {{/if}}
                 <DButton
                   @action={{this.start}}
                   @label="not_risk.start_campaign"
                   @disabled={{or this.busy (not this.canStart)}}
-                  class="btn-primary"
+                  class="btn-primary not-risk-setup-action"
                 />
               {{else}}
                 <label class="not-risk-field">

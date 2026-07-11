@@ -13,7 +13,13 @@ module ::NotRisk
     end
 
     def create
-      render json: engine.create(topic_id: params.require(:topic_id), name: params[:name])
+      render json:
+               engine.create(
+                 topic_id: params[:topic_id],
+                 category_id: params[:category_id],
+                 name: params[:name],
+                 description: params[:description],
+               )
     rescue NotRisk::Error => e
       render_json_error e.message
     end

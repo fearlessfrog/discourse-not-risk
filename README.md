@@ -18,7 +18,11 @@ Battles!
 
 ## Creating a game
 
-Create a normal Discourse topic first. Then either be logged in as Staff and use the browser console helper below or call the staff-only JSON endpoint with that topic ID:
+Admins can configure one or more categories in the `not_risk_game_categories` plugin setting. Members who have Discourse permission to create topics in one of those categories will see a **New Game** button there. The form creates the campaign topic, enrolls its creator, and opens the War Room.
+
+Other members can join from the War Room until the campaign reaches four players. The creator or a staff member can start once 2–4 players have joined.
+
+The existing staff workflow remains available. Create a normal Discourse topic, then use the browser console helper below or call the JSON endpoint with that topic ID:
 
 ```bash
 curl -X POST http://localhost:3000/not-risk/games.json \
@@ -41,9 +45,9 @@ The cooked post renders a compact campaign summary. Use **Open War Room** to pla
 
 ## MVP flow
 
-1. Staff creates a new stub topic and then creates the game using the browser script or curl POST.
-2. Players join, or staff adds players with `POST /not-risk/games/:id/join`.
-3. Staff starts the game.
+1. A member creates a campaign in a configured category and is joined automatically, or staff attaches one to an existing topic.
+2. Other players join from the War Room, or staff adds players with `POST /not-risk/games/:id/join`.
+3. The creator or staff starts the game once 2–4 players have joined.
 4. Current player deploys reinforcements based on territories held: `max(3, owned territories / 2 + territory bonuses)`.
 5. Current player may attack adjacent enemy territories repeatedly.
 6. Current player advances to fortify, then may fortify once between adjacent owned territories.
@@ -64,7 +68,7 @@ The MVP uses a raster-backed test Fantasy 12 map. The base art is served from:
 
 Territory labels, army badges, ownership tint, selection state, and hit zones are SVG overlays driven by `lib/not_risk/maps/fantasy_12_risklike.json`. If you have local development games created with an older map key, recreate them after updating the plugin.
 
-The intention is to create a large map with multiple territories into continents for bonuses, plus allowing 4 to 6 players.
+The current campaign supports 2–4 players. Larger maps and player counts can be added later.
 
 ## API
 
@@ -97,7 +101,7 @@ bundle exec rspec \
   plugins/discourse-not-risk/spec/lib/not_risk_pretty_text_spec.rb
 ```
 
-## Staff Browser Helpers (temp until admin UI)
+## Staff Browser Helpers
 
 ```jscript
 const csrf = document.querySelector("meta[name=csrf-token]").content;

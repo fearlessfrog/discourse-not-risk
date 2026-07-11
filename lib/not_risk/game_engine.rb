@@ -3,6 +3,8 @@
 module ::NotRisk
   class GameEngine
     MIN_REINFORCEMENTS_PER_TURN = 3
+    MIN_PLAYERS = 2
+    MAX_PLAYERS = 4
     PLAYER_COLORS = %w[#c2410c #2563eb #16a34a #9333ea #ca8a04 #0891b2].freeze
     TERRITORY_BONUSES = {
       "central_kingdom" => 2,
@@ -21,54 +23,91 @@ module ::NotRisk
       serialize(game)
     end
 
-    def create(topic_id:, name:)
+    def create(topic_id: nil, category_id: nil, name:, description: nil)
+      return create_for_existing_topic(topic_id, name) if topic_id.present?
+
+      create_in_category(category_id, name, description)
+    end
+
+    def create_for_existing_topic(topic_id, name)
       ensure_staff!
       topic = Topic.find_by(id: topic_id)
       raise Error, I18n.t("not_risk.errors.topic_not_found") if topic.blank?
       ensure_can_see_topic!(topic)
 
-      game =
-        Game.create!(
-          topic: topic,
-          name: name.presence || "Fantasy 12 Campaign",
-          status: "setup",
-          current_phase: "reinforce",
-          turn_number: 1,
-          map_key: Maps::Fantasy12Risklike::KEY,
-          settings: default_settings,
-          created_by: @user,
-        )
+      game = create_game!(topic, name)
 
       append_placeholder!(topic, game)
       record_event(game, nil, "game_created", topic_id: topic.id, name: game.name)
       serialize(game)
+    rescue ActiveRecord::RecordInvalid => e
+      raise Error, duplicate_topic_error(e)
+    end
+
+    def create_in_category(category_id, name, description)
+      raise Error, I18n.t("not_risk.errors.title_required") if name.blank?
+
+      category = Category.find_by(id: category_id)
+      unless category && configured_category_ids.include?(category.id)
+        raise Error, I18n.t("not_risk.errors.category_not_configured")
+      end
+      unless @guardian.can_see?(category) && @guardian.can_create_topic_on_category?(category)
+        raise Error, I18n.t("not_risk.errors.not_allowed")
+      end
+
+      topic = nil
+      game = nil
+      post_creator = nil
+      Game.transaction do
+        post_creator =
+          PostCreator.new(
+            @user,
+            title: name,
+            raw: description.presence || default_campaign_description,
+            category: category.id,
+            skip_jobs: true,
+          )
+        first_post = post_creator.create
+        raise Error, post_creator.errors.full_messages.join(", ") if post_creator.errors.present?
+        topic = first_post.topic
+
+        game = create_game!(topic, name)
+        append_placeholder!(topic, game)
+        record_event(game, nil, "game_created", topic_id: topic.id, name: game.name)
+        player = add_player!(game, @user)
+        record_event(game, player, "player_joined", user_id: @user.id, username: @user.username)
+      end
+      post_creator.enqueue_jobs
+      publish_game_update!(game, "player_joined")
+      serialize(game.reload)
     end
 
     def join(game, user_id: nil)
       ensure_can_see!(game)
       target_user = resolve_join_user(user_id)
-      raise Error, I18n.t("not_risk.errors.already_started") unless game.status == "setup"
-      if game.players.exists?(user_id: target_user.id)
-        raise Error, I18n.t("not_risk.errors.already_joined")
+      player = nil
+      game.with_lock do
+        raise Error, I18n.t("not_risk.errors.already_started") unless game.status == "setup"
+        if game.players.exists?(user_id: target_user.id)
+          raise Error, I18n.t("not_risk.errors.already_joined")
+        end
+        raise Error, I18n.t("not_risk.errors.game_full") if game.players.count >= MAX_PLAYERS
+
+        player = add_player!(game, target_user)
+        record_event(game, player, "player_joined", user_id: target_user.id, username: target_user.username)
       end
 
-      player =
-        game.players.create!(
-          user: target_user,
-          color: PLAYER_COLORS[game.players.count % PLAYER_COLORS.length],
-          position: game.players.count,
-        )
-      record_event(game, player, "player_joined", user_id: target_user.id, username: target_user.username)
       publish_game_update!(game, "player_joined")
       serialize(game.reload)
     end
 
     def start(game)
-      ensure_staff!
       ensure_can_see!(game)
+      ensure_can_start!(game)
       raise Error, I18n.t("not_risk.errors.already_started") unless game.status == "setup"
       joined_players = game.players.order(:position).to_a
-      raise Error, I18n.t("not_risk.errors.not_enough_players") if joined_players.length < 2
+      raise Error, I18n.t("not_risk.errors.not_enough_players") if joined_players.length < MIN_PLAYERS
+      raise Error, I18n.t("not_risk.errors.too_many_players") if joined_players.length > MAX_PLAYERS
       initiative = roll_initiative(joined_players)
       players = initiative.map { |roll| roll[:player] }
       territory_assignments = fair_starting_assignments(Maps::Fantasy12Risklike.territories, players)
@@ -302,6 +341,8 @@ module ::NotRisk
           turn_number: game.turn_number,
           current_player_id: game.current_player_id,
           map_key: game.map_key,
+          created_by_id: game.created_by_id,
+          max_players: MAX_PLAYERS,
           settings: game.settings,
         },
         players:
@@ -345,10 +386,59 @@ module ::NotRisk
                 created_at: event.created_at,
               }
             end,
+        permissions: permissions_for(game, players),
       }
     end
 
     private
+
+    def create_game!(topic, name)
+      Game.create!(
+        topic: topic,
+        name: name.presence || "Fantasy 12 Campaign",
+        status: "setup",
+        current_phase: "reinforce",
+        turn_number: 1,
+        map_key: Maps::Fantasy12Risklike::KEY,
+        settings: default_settings,
+        created_by: @user,
+      )
+    end
+
+    def add_player!(game, user)
+      position = game.players.count
+      game.players.create!(user: user, color: PLAYER_COLORS[position], position: position)
+    end
+
+    def configured_category_ids
+      SiteSetting.not_risk_game_categories.to_s.split("|").filter_map { |id| Integer(id, exception: false) }
+    end
+
+    def default_campaign_description
+      "This topic is the campaign log. Completed turns and major events will be recorded here."
+    end
+
+    def duplicate_topic_error(error)
+      if error.record.is_a?(Game) && error.record.errors.of_kind?(:topic_id, :taken)
+        I18n.t("not_risk.errors.topic_already_attached")
+      else
+        error.message
+      end
+    end
+
+    def permissions_for(game, players)
+      participant = players.any? { |player| player.user_id == @user&.id }
+      setup = game.status == "setup"
+      player_count = players.length
+      {
+        logged_in: @user.present?,
+        is_participant: participant,
+        can_join: @user.present? && setup && !participant && player_count < MAX_PLAYERS,
+        can_start:
+          @user.present? && setup && player_count.between?(MIN_PLAYERS, MAX_PLAYERS) &&
+            (@user.staff? || game.created_by_id == @user.id),
+      }
+    end
 
     def default_settings(game = nil, player = nil, territory_bonuses = nil)
       {
@@ -385,6 +475,12 @@ module ::NotRisk
 
     def ensure_staff!
       raise Error, I18n.t("not_risk.errors.not_allowed") unless @user&.staff?
+    end
+
+    def ensure_can_start!(game)
+      return if @user&.staff? || game.created_by_id == @user&.id
+
+      raise Error, I18n.t("not_risk.errors.not_allowed")
     end
 
     def ensure_can_see!(game)

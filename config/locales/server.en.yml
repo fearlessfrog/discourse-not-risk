@@ -1,6 +1,7 @@
 en:
   site_settings:
     not_risk_enabled: "Enable the Discourse Not Risk plugin"
+    not_risk_game_categories: "Categories where members with topic creation permission can create Not Risk campaigns"
   not_risk:
     errors:
       game_not_found: "Game not found"
@@ -11,7 +12,12 @@ en:
       invalid_phase: "That action is not legal during this phase"
       already_started: "This game has already started"
       not_enough_players: "At least two players are required"
+      too_many_players: "A campaign can have no more than four players"
+      game_full: "This campaign already has four players"
       already_joined: "That player already joined this game"
+      category_not_configured: "Not Risk games cannot be created in that category"
+      title_required: "Enter a campaign title"
+      topic_already_attached: "That topic already has a Not Risk game"
       territory_not_found: "Territory not found"
       owned_territory_required: "You must choose one of your territories"
       enemy_territory_required: "You must choose an enemy territory"

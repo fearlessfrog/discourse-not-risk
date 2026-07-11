@@ -12,7 +12,8 @@ const NotRiskRules = <template>
         <section>
           <h3>Starting a campaign</h3>
           <ol>
-            <li>Players join, then staff starts the campaign.</li>
+            <li>Campaigns support 2–4 players. The creator joins automatically, and other players join from the War Room.</li>
+            <li>The campaign creator or staff starts the game once at least two players have joined.</li>
             <li>
               Everyone rolls for order automatically once started. The highest roll goes first; tied players keep their join order.
             </li>
