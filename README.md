@@ -4,7 +4,7 @@ A small Discourse plugin that adds a forum-native, turn-based, Risk-inspired str
 
 This is an MVP. It intentionally does not include cards, objectives, teams, AI players, fog of war, or a polished admin UI.
 
-If people use it or like the idea I might add things, plus of coursefeel free to fork and add away.
+If people use it or like the idea I might add some more things (like an Admin UI and settings), plus of course feel free to fork and add away yourself.
 
 ## Screenshot
 
@@ -27,7 +27,7 @@ The existing staff workflow remains available. Create a normal Discourse topic, 
 ```bash
 curl -X POST http://localhost:3000/not-risk/games.json \
   -H "Content-Type: application/json" \
-  -d '{"topic_id":123,"name":"Fantasy 12 Campaign"}'
+  -d '{"topic_id":123,"name":"Turn Based Test Campaign"}'
 ```
 (or use the browser script helper below)
 
@@ -56,7 +56,7 @@ The cooked post renders a compact campaign summary. Use **Open War Room** to pla
 
 All committed actions are stored in `not_risk_events`.
 
-Territory bonuses are currently: Central Kingdom +2, Southern Bay +1, and Isle of Mists +1. At game start, one additional non-bonus territory is randomly promoted to +1 for that game. Its starting owner will not be the player who receives Central Kingdom. Starting ownership is randomized, but the three fixed bonus territories are dealt across players first so one player cannot start with all three.
+Help and Rules can be found in game. Territory bonuses are currently: Central Kingdom +2, Southern Bay +1, and Isle of Mists +1. At game start, one additional non-bonus territory is randomly promoted to +1 for that game. Its starting owner will not be the player who receives Central Kingdom. Starting ownership is randomized, but the three fixed bonus territories are dealt across players first so one player cannot start with all three.
 
 ## Map assets
 
@@ -103,6 +103,8 @@ bundle exec rspec \
 
 ## Staff Browser Helpers
 
+If signed in as a Staff group member then you can browser console this:
+
 ```jscript
 const csrf = document.querySelector("meta[name=csrf-token]").content;
 
@@ -125,7 +127,7 @@ async function nr(path, body = {}) {
 ```
 
 ```jscript
-// Create the game replacing TOPIC_ID with the integer of the one you made.
+// Create the game replacing TOPIC_ID with the integer of the one you made e.g. /c/gaming/8 would be '8'.
 const game = await nr("/games", {
   topic_id: TOPIC_ID,
   name: "Board Game Test Campaign",
@@ -133,7 +135,7 @@ const game = await nr("/games", {
 ```
 
 ```jscript
-// Join existing forum members to the game
+// Join existing forum members to the new game using their ids, replace ALICE_ID and BOB_ID below
 // /u/username.json should give back id e.g. "users" "id"
 await nr(`/games/${game.game.id}/join`, { user_id: ALICE_ID });
 await nr(`/games/${game.game.id}/join`, { user_id: BOB_ID });
