@@ -48,15 +48,18 @@ The cooked post renders a compact campaign summary. Use **Open War Room** to pla
 1. A member creates a campaign in a configured category and is joined automatically, or staff attaches one to an existing topic.
 2. Other players join from the War Room, or staff adds players with `POST /not-risk/games/:id/join`.
 3. The creator or staff starts the game once 2–4 players have joined.
-4. Current player deploys reinforcements based on territories held: `max(3, owned territories / 2 + territory bonuses)`.
-5. Current player may attack adjacent enemy territories repeatedly.
-6. Current player advances to fortify, then may fortify once between adjacent owned territories.
-7. Current player ends the turn.
-8. The plugin creates one topic reply summarizing the completed turn.
+4. Before Turn 1, every player deploys their territory-count base allowance without bonuses; attacks remain disabled until everyone finishes.
+5. On normal turns, the current player deploys a base of 3 armies for 1–3 territories, 4 for 4–8, or 5 for 9+, then adds territory bonuses.
+6. Current player may attack adjacent enemy territories repeatedly.
+7. Current player advances to fortify, then may fortify once between adjacent owned territories.
+8. Current player ends the turn.
+9. The plugin creates one topic reply summarizing the completed turn.
 
 All committed actions are stored in `not_risk_events`.
 
-Help and Rules can be found in game. Territory bonuses are currently: Central Kingdom +2, Southern Bay +1, and Isle of Mists +1. At game start, one additional non-bonus territory is randomly promoted to +1 for that game. Its starting owner will not be the player who receives Central Kingdom. Starting ownership is randomized, but the three fixed bonus territories are dealt across players first so one player cannot start with all three.
+New campaigns record rules version **v0.4** and show it beside the Battle Log heading. Each turn also records the reinforcement calculation used for that player.
+
+Help and Rules can be found in game. Territory bonuses are currently: Central Kingdom +1, Southern Bay +1, and Isle of Mists +1. Starting ownership is randomized, but these bonus territories are dealt across players first so one player cannot start with all three.
 
 ## Map assets
 

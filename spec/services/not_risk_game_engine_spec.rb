@@ -30,7 +30,7 @@ RSpec.describe NotRisk::GameEngine do
     described_class.new(user: player.user, guardian: Guardian.new(player.user), rng: rng)
   end
 
-  def create_started_game
+  def create_opening_game
     state = engine.create(topic_id: topic.id, name: "Mudspike Test")
     game = NotRisk::Game.find(state[:game][:id])
     engine.join(game, user_id: user.id)
@@ -39,11 +39,27 @@ RSpec.describe NotRisk::GameEngine do
     game.reload
   end
 
+  def complete_opening_deployment(game)
+    game.players.order(:position).each do |player|
+      game.reload
+      expect(game.current_player_id).to eq(player.id)
+      owned = game.territories.find_by!(owner_player_id: player.id)
+      armies = game.settings.dig("turn_state", "reinforcements_remaining")
+      engine_for(player).deploy(game, territory_key: owned.territory_key, armies: armies)
+    end
+    game.reload
+  end
+
+  def create_started_game
+    complete_opening_deployment(create_opening_game)
+  end
+
   it "creates a game and appends a safe placeholder to the first post" do
     state = engine.create(topic_id: topic.id, name: "Mudspike Test")
 
     expect(state[:game][:name]).to eq("Mudspike Test")
     expect(state[:game][:map_key]).to eq(NotRisk::Maps::Fantasy12Risklike::KEY)
+    expect(state[:game]).not_to have_key(:rules_version)
     expect(state[:map][:background_image_url]).to eq("/plugins/discourse-not-risk/images/fantasy-12-small.jpg")
     expect(state[:map][:image_size]).to eq(width: 1536, height: 1024)
     expect(state[:map][:view_box]).to eq("0 0 1000 667")
@@ -61,6 +77,60 @@ RSpec.describe NotRisk::GameEngine do
     expect(game.territories.count).to eq(12)
     expect(game.territories.pluck(:territory_key)).to include("northwest_forest", "central_kingdom", "isle_of_mists")
     expect(game.players.order(:position).first.id).to eq(game.current_player_id)
+    expect(game.settings["rules_version"]).to eq("0.4")
+    expect(engine.show(game)[:game][:rules_version]).to eq("0.4")
+
+    started_event = game.events.find_by!(event_type: "game_started")
+    expect(started_event.payload["rules_version"]).to eq("0.4")
+    grant_event = game.events.where(event_type: "reinforcements_granted", player_id: game.current_player_id).last
+    expect(grant_event.payload["total_armies"]).to eq(
+      game.settings.dig("turn_state", "reinforcements_remaining"),
+    )
+  end
+
+  it "gives every player a bonus-free opening deployment before Turn 1" do
+    game = create_opening_game
+    opening_players = game.players.order(:position).to_a
+    first_player = opening_players.first
+    initial_post_count = topic.posts.count
+
+    expect(game.turn_number).to eq(0)
+    expect(game.current_phase).to eq("reinforce")
+    expect(game.current_player_id).to eq(first_player.id)
+    expect(game.settings.dig("turn_state", "opening_deployment")).to eq(true)
+
+    expect {
+      engine_for(first_player).attack(game, from_key: "central_kingdom", to_key: "dark_marsh")
+    }.to raise_error(NotRisk::Error, I18n.t("not_risk.errors.invalid_phase"))
+
+    opening_players.each do |player|
+      game.reload
+      territory_count = game.territories.where(owner_player_id: player.id).count
+      breakdown = game.settings.dig("turn_state", "reinforcement_breakdown")
+      expected_base = engine.send(:territory_count_allowance, territory_count)
+
+      expect(game.current_player_id).to eq(player.id)
+      expect(breakdown).to include(
+        "opening_deployment" => true,
+        "base_armies" => expected_base,
+        "bonus_armies" => 0,
+        "total_armies" => expected_base,
+      )
+      expect(breakdown["bonuses"]).to be_empty
+
+      owned = game.territories.find_by!(owner_player_id: player.id)
+      engine_for(player).deploy(game, territory_key: owned.territory_key, armies: expected_base)
+      expect(game.territories.where(owner_player_id: player.id).sum(:armies)).to eq(territory_count + expected_base)
+    end
+
+    game.reload
+    expect(game.turn_number).to eq(1)
+    expect(game.current_phase).to eq("reinforce")
+    expect(game.current_player_id).to eq(first_player.id)
+    expect(game.settings.dig("turn_state")).not_to have_key("opening_deployment")
+    expect(game.settings.dig("turn_state", "reinforcement_breakdown", "bonus_armies")).to be >= 1
+    expect(game.events.where(event_type: "opening_deployment_completed").count).to eq(1)
+    expect(topic.posts.count).to eq(initial_post_count)
   end
 
   it "randomizes starting ownership without giving one player every bonus territory" do
@@ -77,31 +147,17 @@ RSpec.describe NotRisk::GameEngine do
     expect(assigned_bonus_keys.sort).to eq(bonus_keys.sort)
   end
 
-  it "adds one random non-bonus territory bonus for the game" do
+  it "uses only the three fixed territory bonuses" do
     game = create_started_game
-    fixed_bonus_keys = NotRisk::GameEngine::TERRITORY_BONUSES.keys
     active_bonuses = game.settings.fetch("territory_bonuses")
-    dynamic_bonus_keys = active_bonuses.keys - fixed_bonus_keys
-
-    expect(dynamic_bonus_keys.length).to eq(1)
-    expect(active_bonuses.fetch(dynamic_bonus_keys.first)).to eq(1)
+    expect(active_bonuses).to eq(NotRisk::GameEngine::TERRITORY_BONUSES)
 
     event = game.events.where(event_type: "game_started").last
     expect(event.payload["territory_bonuses"]).to eq(active_bonuses)
 
     state = engine.show(game)
-    dynamic_territory = state[:territories].find { |territory| territory[:key] == dynamic_bonus_keys.first }
-    expect(dynamic_territory[:bonus]).to eq(1)
-  end
-
-  it "does not give the random territory bonus to Central Kingdom's starting owner" do
-    game = create_started_game
-    fixed_bonus_keys = NotRisk::GameEngine::TERRITORY_BONUSES.keys
-    dynamic_bonus_key = (game.settings.fetch("territory_bonuses").keys - fixed_bonus_keys).sole
-    central_owner_id = game.territories.find_by!(territory_key: "central_kingdom").owner_player_id
-    dynamic_bonus_owner_id = game.territories.find_by!(territory_key: dynamic_bonus_key).owner_player_id
-
-    expect(dynamic_bonus_owner_id).not_to eq(central_owner_id)
+    bonus_by_key = state[:territories].to_h { |territory| [territory[:key], territory[:bonus]] }
+    expect(bonus_by_key.select { |_key, bonus| bonus.positive? }).to eq(active_bonuses)
   end
 
 
@@ -132,30 +188,58 @@ RSpec.describe NotRisk::GameEngine do
       NotRisk::Error,
     )
 
+    armies_before = owned.armies
     reinforcements = game.settings.dig("turn_state", "reinforcements_remaining")
     state = current_engine.deploy(game, territory_key: owned.territory_key, armies: reinforcements)
     expect(state[:game][:current_phase]).to eq("attack")
-    expect(owned.reload.armies).to eq(1 + reinforcements)
+    expect(owned.reload.armies).to eq(armies_before + reinforcements)
   end
 
-  it "sets reinforcements from half the territory count plus territory bonuses" do
+  it "sets the base reinforcement allowance from territory-count tiers" do
     game = create_started_game
     current_player = game.current_player
-    current_engine = engine_for(current_player)
     other_player = game.players.where.not(id: current_player.id).first
-
     normal_keys =
       NotRisk::Maps::Fantasy12Risklike.territories
         .map { |territory| territory[:key] }
         .reject { |key| NotRisk::GameEngine::TERRITORY_BONUSES.key?(key) }
 
-    game.territories.update_all(owner_player_id: other_player.id)
-    set_owner(game, current_player, normal_keys.first(2))
-    expect(engine.send(:reinforcement_count_for, game, current_player, NotRisk::GameEngine::TERRITORY_BONUSES)).to eq(3)
+    { 1 => 3, 3 => 3, 4 => 4, 5 => 4, 6 => 4, 8 => 4, 9 => 5, 11 => 5, 12 => 5 }.each do |count, expected|
+      game.territories.update_all(owner_player_id: other_player.id)
+      owned_keys = NotRisk::Maps::Fantasy12Risklike.territories.first(count).pluck(:key)
+      set_owner(game, current_player, owned_keys)
+      breakdown = engine.send(:reinforcement_breakdown_for, game, current_player, {})
+
+      expect(breakdown).to include(
+        "territory_count" => count,
+        "base_armies" => expected,
+        "bonus_armies" => 0,
+        "total_armies" => expected,
+      )
+    end
 
     game.territories.update_all(owner_player_id: other_player.id)
-    set_owner(game, current_player, %w[central_kingdom southern_bay isle_of_mists frost_peaks red_mountains])
-    expect(engine.send(:reinforcement_count_for, game, current_player, NotRisk::GameEngine::TERRITORY_BONUSES)).to eq(6)
+    set_owner(game, current_player, ["central_kingdom", *normal_keys.first(3)])
+    breakdown =
+      engine.send(:reinforcement_breakdown_for, game, current_player, NotRisk::GameEngine::TERRITORY_BONUSES)
+    expect(breakdown).to include(
+      "territory_count" => 4,
+      "base_armies" => 4,
+      "bonus_armies" => 1,
+      "total_armies" => 5,
+    )
+    expect(breakdown["bonuses"]).to eq([{ "territory" => "central_kingdom", "armies" => 1 }])
+  end
+
+  it "grants and records the next player's reinforcement breakdown" do
+    game = create_started_game
+    current_player = game.current_player
+    current_engine = engine_for(current_player)
+    other_player = game.players.where.not(id: current_player.id).first
+    normal_keys =
+      NotRisk::Maps::Fantasy12Risklike.territories
+        .map { |territory| territory[:key] }
+        .reject { |key| NotRisk::GameEngine::TERRITORY_BONUSES.key?(key) }
 
     game.territories.update_all(owner_player_id: current_player.id)
     set_owner(game, other_player, normal_keys.first(6))
@@ -166,7 +250,15 @@ RSpec.describe NotRisk::GameEngine do
 
     current_engine.end_turn(game)
 
-    expect(game.reload.settings.dig("turn_state", "reinforcements_remaining")).to eq(3)
+    expect(game.reload.settings.dig("turn_state", "reinforcements_remaining")).to eq(4)
+    expect(game.settings.dig("turn_state", "reinforcement_breakdown")).to include(
+      "territory_count" => 6,
+      "base_armies" => 4,
+      "total_armies" => 4,
+    )
+    grant_event = game.events.where(event_type: "reinforcements_granted", player_id: other_player.id).last
+    expect(grant_event.turn_number).to eq(game.turn_number)
+    expect(grant_event.payload).to include("total_armies" => 4, "rules_version" => "0.4")
   end
 
   it "publishes game updates after committed actions" do
@@ -429,6 +521,8 @@ RSpec.describe NotRisk::GameEngine do
     expect(game.current_phase).to eq("reinforce")
     summary = topic.posts.order(:post_number).last.raw
     expect(summary).to include("Turn 1 - @#{ending_player.user.username}")
+    expect(summary).to include("Available:")
+    expect(summary).to match(/territories: \d+ base/)
     expect(summary).to include("@#{next_player.user.username}")
   end
 end

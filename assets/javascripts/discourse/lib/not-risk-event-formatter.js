@@ -2,6 +2,8 @@ const EVENT_LABELS = {
   game_created: "Game created",
   player_joined: "Player joined",
   game_started: "Campaign started",
+  reinforcements_granted: "Reinforcements granted",
+  opening_deployment_completed: "Opening deployment completed",
   deploy: "Reinforcements deployed",
   attack: "Attack",
   advance_to_fortify: "Fortification phase",
@@ -32,6 +34,25 @@ function humanizeEventType(eventType) {
     .join(" ");
 }
 
+export function formatReinforcementBreakdown(payload, { territoryName }) {
+  if (!payload) {
+    return "";
+  }
+
+  const territoryLabel =
+    payload.territory_count === 1 ? "territory" : "territories";
+  const parts = [
+    `${payload.territory_count} ${territoryLabel}: ${payload.base_armies} base`,
+  ];
+
+  for (const bonus of payload.bonuses || []) {
+    parts.push(`+${bonus.armies} ${territoryName(bonus.territory)}`);
+  }
+
+  const prefix = payload.opening_deployment ? "Opening deployment — " : "";
+  return `${prefix}${parts.join(" ")} = ${payload.total_armies} armies.`;
+}
+
 export function formatNotRiskEvent(event, { territoryName, playerName }) {
   const payload = event.payload || {};
   const actor = event.username || "A player";
@@ -56,9 +77,24 @@ export function formatNotRiskEvent(event, { territoryName, playerName }) {
         lines.push(`Turn order: ${order.join(", ")}.`);
         lines.push(`${order[0]} takes the first turn.`);
       }
+      if (payload.rules_version) {
+        lines.push(`Rules v${payload.rules_version}.`);
+      }
 
       return { label, lines };
     }
+    case "reinforcements_granted":
+      return {
+        label,
+        lines: [formatReinforcementBreakdown(payload, { territoryName })],
+      };
+    case "opening_deployment_completed":
+      return {
+        label,
+        lines: [
+          `Every player deployed their opening armies. ${payload.first_username || playerName(payload.first_player_id)} begins Turn 1.`,
+        ],
+      };
     case "deploy":
       return {
         label,

@@ -54,9 +54,17 @@ export default class NotRiskGameSummary extends Component {
     return this.game?.status === "setup";
   }
 
+  get isOpeningDeployment() {
+    return Boolean(this.game?.settings?.turn_state?.opening_deployment);
+  }
+
   get phaseLabel() {
     if (this.isSetup) {
       return "setup";
+    }
+
+    if (this.isOpeningDeployment) {
+      return "opening deployment";
     }
 
     return this.game?.current_phase?.replace("_", " ") || "setup";
@@ -77,6 +85,10 @@ export default class NotRiskGameSummary extends Component {
 
     if (!this.currentPlayer) {
       return "Waiting for turn assignment";
+    }
+
+    if (this.isOpeningDeployment) {
+      return `Waiting for ${this.currentPlayer.username} to deploy opening armies`;
     }
 
     return `Waiting for ${this.currentPlayer.username} to ${this.phaseLabel}`;

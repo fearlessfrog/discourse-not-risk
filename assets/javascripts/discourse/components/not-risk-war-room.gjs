@@ -9,7 +9,11 @@ import { popupAjaxError } from "discourse/lib/ajax-error";
 import { eq, not, or } from "discourse/truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
 import { i18n } from "discourse-i18n";
-import { formatNotRiskEvent } from "../lib/not-risk-event-formatter";
+import {
+  formatNotRiskEvent,
+  formatReinforcementBreakdown,
+} from "../lib/not-risk-event-formatter";
+import { shouldConfirmEndTurn } from "../lib/not-risk-turn";
 import NotRiskBattle from "./modal/not-risk-battle";
 import NotRiskRules from "./modal/not-risk-rules";
 import NotRiskMap from "./not-risk-map";
@@ -17,6 +21,7 @@ import NotRiskMap from "./not-risk-map";
 export default class NotRiskWarRoom extends Component {
   @service messageBus;
   @service modal;
+  @service dialog;
   @service currentUser;
 
   @tracked state = this.args.model;
@@ -57,9 +62,17 @@ export default class NotRiskWarRoom extends Component {
     return this.game.status === "setup";
   }
 
+  get isOpeningDeployment() {
+    return Boolean(this.game.settings?.turn_state?.opening_deployment);
+  }
+
   get phaseLabel() {
     if (this.isSetup) {
       return "setup";
+    }
+
+    if (this.isOpeningDeployment) {
+      return "opening deployment";
     }
 
     return this.game.current_phase?.replace("_", " ") || "setup";
@@ -82,6 +95,10 @@ export default class NotRiskWarRoom extends Component {
       return "Waiting for turn assignment";
     }
 
+    if (this.isOpeningDeployment) {
+      return `Waiting for ${this.currentPlayer.username} to deploy opening armies`;
+    }
+
     return `Waiting for ${this.currentPlayer.username} to ${this.phaseLabel}`;
   }
 
@@ -92,6 +109,10 @@ export default class NotRiskWarRoom extends Component {
 
     if (this.isSetup) {
       return "Join the campaign, then the host or staff can start once at least two players are ready.";
+    }
+
+    if (this.isOpeningDeployment) {
+      return "Place all your opening armies. Attacks begin after every player has deployed.";
     }
 
     if (this.game.current_phase === "reinforce") {
@@ -148,6 +169,23 @@ export default class NotRiskWarRoom extends Component {
     return Boolean(this.game.settings?.turn_state?.fortify_used);
   }
 
+  get reinforcementBreakdown() {
+    return formatReinforcementBreakdown(
+      this.game.settings?.turn_state?.reinforcement_breakdown,
+      { territoryName: this.territoryName }
+    );
+  }
+
+  get shouldConfirmEndTurn() {
+    return shouldConfirmEndTurn(this.state);
+  }
+
+  get endTurnWarning() {
+    return this.game.current_phase === "attack"
+      ? i18n("not_risk.end_turn_attack_warning")
+      : i18n("not_risk.end_turn_fortify_warning");
+  }
+
   get canDeploy() {
     return this.game.current_phase === "reinforce" && this.selectedFrom;
   }
@@ -188,6 +226,10 @@ export default class NotRiskWarRoom extends Component {
     return `/t/${this.game.topic_id}`;
   }
 
+  get turnLabel() {
+    return this.isOpeningDeployment ? "Opening" : this.game.turn_number;
+  }
+
   territoryName = (key) => {
     if (!key) {
       return "None";
@@ -209,6 +251,12 @@ export default class NotRiskWarRoom extends Component {
 
   eventPayload = (event) => {
     return JSON.stringify(event.payload, null, 2);
+  };
+
+  eventTurnLabel = (event) => {
+    return event.turn_number === 0
+      ? "Opening deployment"
+      : `Turn ${event.turn_number}`;
   };
 
   eventDisplay = (event) => {
@@ -367,6 +415,15 @@ export default class NotRiskWarRoom extends Component {
 
   @action
   endTurn() {
+    if (this.shouldConfirmEndTurn) {
+      return this.dialog.confirm({
+        message: this.endTurnWarning,
+        confirmButtonLabel: "not_risk.end_turn",
+        cancelButtonLabel: "not_risk.keep_playing",
+        didConfirm: () => this.postAction("end_turn"),
+      });
+    }
+
     return this.postAction("end_turn");
   }
 
@@ -405,7 +462,7 @@ export default class NotRiskWarRoom extends Component {
         </div>
         <div>
           <span>Turn</span>
-          <strong>{{this.game.turn_number}}</strong>
+          <strong>{{this.turnLabel}}</strong>
         </div>
       </section>
 
@@ -475,6 +532,9 @@ export default class NotRiskWarRoom extends Component {
                   class="btn-primary not-risk-setup-action"
                 />
               {{else}}
+                {{#if this.reinforcementBreakdown}}
+                  <p class="not-risk-muted">{{this.reinforcementBreakdown}}</p>
+                {{/if}}
                 <label class="not-risk-field">
                   Armies to deploy
                   <input type="number" min="1" value={{this.armies}} {{on "input" this.updateArmies}} />
@@ -599,7 +659,12 @@ export default class NotRiskWarRoom extends Component {
 
       <section class="not-risk-panel not-risk-log">
         <header class="not-risk-log__header">
-          <h2>Battle Log</h2>
+          <h2>
+            Battle Log
+            {{#if this.game.rules_version}}
+              <small>Rules v{{this.game.rules_version}}</small>
+            {{/if}}
+          </h2>
           <label class="not-risk-log__diagnostics">
             <input
               type="checkbox"
@@ -612,7 +677,7 @@ export default class NotRiskWarRoom extends Component {
         {{#each this.state.events as |event|}}
           {{#if this.showDiagnostics}}
             <article>
-              <strong>Turn {{event.turn_number}} · {{event.event_type}}</strong>
+              <strong>{{this.eventTurnLabel event}} · {{event.event_type}}</strong>
               <pre>{{this.eventPayload event}}</pre>
             </article>
           {{else}}
@@ -621,7 +686,7 @@ export default class NotRiskWarRoom extends Component {
                 class={{if display.hasPlayer "not-risk-log__player-event"}}
                 style={{display.playerStyle}}
               >
-                <strong>Turn {{event.turn_number}} · {{display.label}}</strong>
+                <strong>{{this.eventTurnLabel event}} · {{display.label}}</strong>
                 {{#each display.lines as |line|}}
                   <p>{{line}}</p>
                 {{/each}}

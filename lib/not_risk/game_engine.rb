@@ -3,11 +3,12 @@
 module ::NotRisk
   class GameEngine
     MIN_REINFORCEMENTS_PER_TURN = 3
+    CURRENT_RULES_VERSION = "0.4"
     MIN_PLAYERS = 2
     MAX_PLAYERS = 4
     PLAYER_COLORS = %w[#c2410c #2563eb #16a34a #9333ea #ca8a04 #0891b2].freeze
     TERRITORY_BONUSES = {
-      "central_kingdom" => 2,
+      "central_kingdom" => 1,
       "southern_bay" => 1,
       "isle_of_mists" => 1,
     }.freeze
@@ -124,15 +125,20 @@ module ::NotRisk
           )
         end
 
-        territory_bonuses =
-          territory_bonuses_with(random_game_bonus_key(Maps::Fantasy12Risklike.territories, territory_assignments))
+        territory_bonuses = TERRITORY_BONUSES
 
         game.update!(
           status: "active",
           current_player: players.first,
           current_phase: "reinforce",
-          turn_number: 1,
-          settings: default_settings(game, players.first, territory_bonuses),
+          turn_number: 0,
+          settings:
+            opening_deployment_settings(
+              game,
+              players.first,
+              territory_bonuses,
+              rules_version: CURRENT_RULES_VERSION,
+            ),
         )
         record_event(
           game,
@@ -153,7 +159,9 @@ module ::NotRisk
               { territory: definition[:key], player_id: player.id, username: player.user.username }
             end,
           territory_bonuses: territory_bonuses,
+          rules_version: CURRENT_RULES_VERSION,
         )
+        record_reinforcements_granted!(game, players.first)
       end
 
       publish_game_update!(game, "game_started")
@@ -174,9 +182,14 @@ module ::NotRisk
       Game.transaction do
         territory.update!(armies: territory.armies + armies)
         state["reinforcements_remaining"] = remaining - armies
-        game.current_phase = "attack" if state["reinforcements_remaining"].zero?
-        save_turn_state!(game, state)
         record_event(game, player, "deploy", territory: territory_key, armies: armies)
+
+        if state["reinforcements_remaining"].zero? && state["opening_deployment"]
+          advance_opening_deployment!(game, player)
+        else
+          game.current_phase = "attack" if state["reinforcements_remaining"].zero?
+          save_turn_state!(game, state)
+        end
       end
 
       publish_game_update!(game, "deploy")
@@ -319,6 +332,7 @@ module ::NotRisk
           turn_number: next_turn_number,
           settings: default_settings(game, next_player),
         )
+        record_reinforcements_granted!(game, next_player)
       end
 
       publish_game_update!(game, "end_turn")
@@ -331,20 +345,23 @@ module ::NotRisk
       territories = game.territories.order(:territory_key).to_a
       territory_by_key = territories.index_by(&:territory_key)
 
+      game_state = {
+        id: game.id,
+        topic_id: game.topic_id,
+        name: game.name,
+        status: game.status,
+        current_phase: game.current_phase,
+        turn_number: game.turn_number,
+        current_player_id: game.current_player_id,
+        map_key: game.map_key,
+        created_by_id: game.created_by_id,
+        max_players: MAX_PLAYERS,
+        settings: game.settings,
+      }
+      game_state[:rules_version] = game.settings["rules_version"] if game.settings["rules_version"].present?
+
       {
-        game: {
-          id: game.id,
-          topic_id: game.topic_id,
-          name: game.name,
-          status: game.status,
-          current_phase: game.current_phase,
-          turn_number: game.turn_number,
-          current_player_id: game.current_player_id,
-          map_key: game.map_key,
-          created_by_id: game.created_by_id,
-          max_players: MAX_PLAYERS,
-          settings: game.settings,
-        },
+        game: game_state,
         players:
           players.map do |player|
             {
@@ -440,14 +457,35 @@ module ::NotRisk
       }
     end
 
-    def default_settings(game = nil, player = nil, territory_bonuses = nil)
-      {
+    def default_settings(game = nil, player = nil, territory_bonuses = nil, rules_version: nil)
+      breakdown = reinforcement_breakdown_for(game, player, territory_bonuses)
+      settings = {
         "turn_state" => {
-          "reinforcements_remaining" => reinforcement_count_for(game, player, territory_bonuses),
+          "reinforcements_remaining" => breakdown["total_armies"],
           "fortify_used" => false,
         },
         "territory_bonuses" => territory_bonuses || territory_bonuses_for(game),
       }
+      settings["turn_state"]["reinforcement_breakdown"] = breakdown if game.present? && player.present?
+
+      active_rules_version = rules_version || game&.settings&.[]("rules_version")
+      settings["rules_version"] = active_rules_version if active_rules_version.present?
+      settings
+    end
+
+    def opening_deployment_settings(game, player, territory_bonuses, rules_version: nil)
+      breakdown = reinforcement_breakdown_for(game, player, {})
+      breakdown["opening_deployment"] = true
+      {
+        "turn_state" => {
+          "reinforcements_remaining" => breakdown["total_armies"],
+          "fortify_used" => false,
+          "opening_deployment" => true,
+          "reinforcement_breakdown" => breakdown,
+        },
+        "territory_bonuses" => territory_bonuses,
+        "rules_version" => rules_version || game.settings["rules_version"],
+      }.compact
     end
 
     def game_channel(game)
@@ -550,17 +588,6 @@ module ::NotRisk
       items.sort_by { @rng.rand(1_000_000) }
     end
 
-    def random_game_bonus_key(territories, territory_assignments)
-      central_owner = territory_assignments.find { |definition, _player| definition[:key] == "central_kingdom" }&.last
-      owners_by_key = territory_assignments.to_h { |definition, player| [definition[:key], player] }
-      eligible_definitions =
-        territories.reject do |definition|
-          TERRITORY_BONUSES.key?(definition[:key]) || owners_by_key[definition[:key]] == central_owner
-        end
-
-      shuffle(eligible_definitions).first.fetch(:key)
-    end
-
     def compare_dice(attacker_dice, defender_dice)
       losses = { attacker: 0, defender: 0 }
       attacker_dice.zip(defender_dice).each do |attacker, defender|
@@ -575,26 +602,58 @@ module ::NotRisk
     end
 
     def reinforcement_count_for(game, player, territory_bonuses = nil)
-      return MIN_REINFORCEMENTS_PER_TURN if game.blank? || player.blank?
+      reinforcement_breakdown_for(game, player, territory_bonuses)["total_armies"]
+    end
+
+    def reinforcement_breakdown_for(game, player, territory_bonuses = nil)
+      if game.blank? || player.blank?
+        return {
+          "territory_count" => 0,
+          "base_armies" => MIN_REINFORCEMENTS_PER_TURN,
+          "bonuses" => [],
+          "bonus_armies" => 0,
+          "total_armies" => MIN_REINFORCEMENTS_PER_TURN,
+        }
+      end
 
       territory_count = game.territories.where(owner_player_id: player.id).count
       territory_bonuses ||= territory_bonuses_for(game)
-      territory_bonus =
+      bonuses =
         game
           .territories
           .where(owner_player_id: player.id, territory_key: territory_bonuses.keys)
-          .sum { |territory| territory_bonuses.fetch(territory.territory_key) }
+          .order(:territory_key)
+          .map do |territory|
+            {
+              "territory" => territory.territory_key,
+              "armies" => territory_bonuses.fetch(territory.territory_key),
+            }
+          end
+      base_armies = territory_count_allowance(territory_count)
+      bonus_armies = bonuses.sum { |bonus| bonus["armies"] }
 
-      [(territory_count / 2) + territory_bonus, MIN_REINFORCEMENTS_PER_TURN].max
+      {
+        "territory_count" => territory_count,
+        "base_armies" => base_armies,
+        "bonuses" => bonuses,
+        "bonus_armies" => bonus_armies,
+        "total_armies" => base_armies + bonus_armies,
+      }
     end
 
-    def territory_bonuses_for(game)
-      territory_bonuses_with(game&.settings&.fetch("territory_bonuses", nil))
+    def territory_count_allowance(territory_count)
+      case territory_count
+      when 0..3
+        3
+      when 4..8
+        4
+      else
+        5
+      end
     end
 
-    def territory_bonuses_with(extra_bonuses)
-      extra_bonuses = { extra_bonuses => 1 } if extra_bonuses.is_a?(String)
-      TERRITORY_BONUSES.merge((extra_bonuses || {}).stringify_keys)
+    def territory_bonuses_for(_game)
+      TERRITORY_BONUSES
     end
 
     def attack_armies_for(attack_armies, source_armies)
@@ -625,6 +684,54 @@ module ::NotRisk
       )
     end
 
+    def record_reinforcements_granted!(game, player)
+      breakdown = game.settings.dig("turn_state", "reinforcement_breakdown")
+      return if breakdown.blank?
+
+      record_event(
+        game,
+        player,
+        "reinforcements_granted",
+        breakdown.merge("rules_version" => game.settings["rules_version"]),
+      )
+    end
+
+    def advance_opening_deployment!(game, player)
+      players = game.players.order(:position).to_a
+      current_index = players.index { |candidate| candidate.id == player.id } || 0
+      next_player = players[current_index + 1]
+
+      if next_player
+        game.update!(
+          current_player: next_player,
+          settings:
+            opening_deployment_settings(
+              game,
+              next_player,
+              territory_bonuses_for(game),
+            ),
+        )
+        record_reinforcements_granted!(game, next_player)
+        return
+      end
+
+      first_player = players.first
+      record_event(
+        game,
+        player,
+        "opening_deployment_completed",
+        first_player_id: first_player.id,
+        first_username: first_player.user.username,
+      )
+      game.update!(
+        current_player: first_player,
+        current_phase: "reinforce",
+        turn_number: 1,
+        settings: default_settings(game, first_player),
+      )
+      record_reinforcements_granted!(game, first_player)
+    end
+
     def append_placeholder!(topic, game)
       first_post = topic.first_post
       return if first_post.blank?
@@ -647,10 +754,12 @@ module ::NotRisk
     def turn_summary_raw(game, player, next_player, events)
       lines = ["Turn #{game.turn_number} - @#{player.user.username}", ""]
       deploys = events.select { |event| event.event_type == "deploy" }
+      reinforcement_grant = events.find { |event| event.event_type == "reinforcements_granted" }
       attacks = events.select { |event| event.event_type == "attack" }
       fortifies = events.select { |event| event.event_type == "fortify" }
 
       lines << "Reinforcements:"
+      lines << "- Available: #{reinforcement_summary(reinforcement_grant.payload)}" if reinforcement_grant
       if deploys.empty?
         lines << "- None"
       else
@@ -691,6 +800,15 @@ module ::NotRisk
 
     def territory_name(key)
       Maps::Fantasy12Risklike.territory(key)&.dig(:name) || key
+    end
+
+    def reinforcement_summary(payload)
+      territory_label = payload["territory_count"] == 1 ? "territory" : "territories"
+      parts = ["#{payload["territory_count"]} #{territory_label}: #{payload["base_armies"]} base"]
+      payload.fetch("bonuses", []).each do |bonus|
+        parts << "+#{bonus["armies"]} #{territory_name(bonus["territory"])}"
+      end
+      "#{parts.join(' ')} = #{payload["total_armies"]} armies"
     end
   end
 end

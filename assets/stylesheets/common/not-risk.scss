@@ -679,6 +679,13 @@
   margin-bottom: 0;
 }
 
+.not-risk-log__header h2 small {
+  margin-left: 0.35rem;
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+  font-weight: 600;
+}
+
 .not-risk-log__diagnostics {
   display: inline-flex;
   align-items: center;

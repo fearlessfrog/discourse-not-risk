@@ -23,8 +23,11 @@ const NotRiskRules = <template>
           </ol>
           <p>
             The three fixed bonus territories are shared across players before the rest are dealt, so one player
-            cannot begin with all three. One other non-bonus territory is also randomly chosen to be worth +1 for
-            the whole campaign. It will not start with the player who receives Central Kingdom.
+            cannot begin with all three.
+          </p>
+          <p>
+            Before Turn 1, every player deploys their territory-count base allowance without bonuses. Attacks begin
+            only after all opening armies have been placed.
           </p>
         </section>
 
@@ -32,13 +35,12 @@ const NotRiskRules = <template>
           <h3>Territory bonuses</h3>
           <p>Hold these territories when your turn begins to receive extra armies:</p>
           <ul>
-            <li><strong>Central Kingdom:</strong> +2 armies</li>
+            <li><strong>Central Kingdom:</strong> +1 army</li>
             <li><strong>Southern Bay:</strong> +1 army</li>
             <li><strong>Isle of Mists:</strong> +1 army</li>
           </ul>
           <p>
-            The randomly chosen bonus territory is marked +1 in the territory list and keeps that value even when
-            it changes hands.
+            Bonus territories keep their +1 value when they change hands.
           </p>
         </section>
 
@@ -46,8 +48,8 @@ const NotRiskRules = <template>
           <h3>Your turn</h3>
           <ol>
             <li>
-              <strong>Reinforce:</strong> Count one army for every two territories you own, rounding down, then add
-              your territory bonuses. You always receive at least three armies.
+              <strong>Reinforce:</strong> Receive 3 base armies for 1–3 territories, 4 for 4–8, or 5 for 9 or
+              more. Then add your territory bonuses.
             </li>
             <li>
               <strong>Attack:</strong> Attack any adjacent enemy territory as many times as you like. You must leave
